@@ -19,8 +19,8 @@ LiquidCrystal lcd(12, 11, 5, 4, 3, 2); // initialize the library with the number
 int min = 0;  // Current Time (Minutes)
 int hour = 0; // Current Time (Hours)
 
-int to_m = 0;     // Time offset Min
-int to_h = 0;     // Time offset Hour
+int to_m = 30;     // Time offset Min
+int to_h = 12;     // Time offset Hour
 int al_m = 0;     // Alarm time Min
 int al_h = 6;     // Alarm time Hour
 int snooze_s = 0; // Snooze Seconds
@@ -34,9 +34,10 @@ int setMode = 0;     //Setting mode
 
 int wakingTime = -1; //Vergangene Sekunden seit Waeckstart
 int napTime = -1;    //Vergangene Sekunden seit Mittagsschlafstart
+int snoozeTime = -1; //Vergangene Sekunden seit snoozeStart
 
 int curText = 0; //Momentan angezeigte Punkte
-int curNum = 0;  //Momentan angezeigte Nummer
+int curTime = 0;  //Momentan angezeigte Nummer
 
 #define KY_TIM 10   //key [ms]
 #define KY_TIMX 500 //key repeat lock [ms]
@@ -69,6 +70,8 @@ void gptim() //gp-timer 1ms ir-service
             wakingTime++; //wakingTime ist -1 wenn der wecker nicht gerade weckt
         if (napTime >= 0)
             napTime++; //napTime ist -1 wenn der Mittagsschlaf nicht gerade gestartet ist
+        if (snoozeTime >= 0)
+            snoozeTime++; //snoozeTime ist -1 wenn der snooze nicht gerade gestartet ist
     }
 
     return;
@@ -155,14 +158,16 @@ unsigned char getkey(void) //get a key
 }
 
 //generate num
-int genNum()
+int genTime()
 {
+    return (min + hour * 100);
+}
+/*
     if (setMode)
     {
         switch (setMode)
         {
         case 1:
-            return (min + hour * 100);
             break;
         case 2:
             return (al_m + al_h * 100);
@@ -183,7 +188,7 @@ int genNum()
         return leftoverNapTime % 60 + (leftoverNapTime / 60) * 100;
     }
     return (min + hour * 100);
-}
+}*/
 
 //generate dot mask
 int genText()
@@ -216,11 +221,16 @@ int genText()
     return 0;
 }
 
-void writeTime(int time) {
-    lcd.setCursor(0, 1);
-    for (int i = 0x8; i > 0; i >>= 1)
-        lcd.print(time & i);
-    curNum = time;
+void writeTime(int time, int x, int y) {
+    for (int i = 4; i >= 0; i--){
+        lcd.setCursor(i + x, 0 + y);
+        if(i == 2){
+            lcd.print(":");
+            continue;
+        }
+        lcd.print(time % 10);
+        time /= 10;
+    }
 }
 
 void writeText(int text) {
@@ -229,18 +239,18 @@ void writeText(int text) {
     curText = text;
 }
 
+//update dirty display
 void display()
 {
     //generate num
-    int num = genNum();
-
+    int cTime = genTime();
+    if (cTime != curTime) {
+        writeTime(cTime, 0, 0);
+        curTime = cTime;
+    }
+    
     //generate text
     int text = genText();
-
-    //update dirty display
-    if (num != curNum)
-        writeTime(num);
-    
     if(text != curText)
         writeText(text);
 }
@@ -364,13 +374,19 @@ void checkAlarm()
     }
 }
 
+int genLeftOverTime()
+{
+    sw
+}
+
 int b = 0;
 void loop()
 {
 
     //generate time
-    min = ((tims / 60 + to_m) % 60);
-    hour = ((tims / 3600 + to_h) % 24); // ((tims / 60) / 60 + to_h) % 24;
+    int tmpMin = tims / 60 + to_m;
+    min = tmpMin % 60;
+    hour = (tmpMin / 60 + to_h) % 24; // ((tims / 60) / 60 + to_h) % 24;
 
     handleInput();
 
