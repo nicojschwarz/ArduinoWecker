@@ -185,7 +185,7 @@ int genNum()
     return (min + hour * 100);
 }
 
-//generate context text
+//generate dot mask
 int genText()
 {
     if (wakingTime >= 0)
@@ -218,8 +218,8 @@ int genText()
 
 void writeTime(int time) {
     lcd.setCursor(0, 1);
-    for ()
-    lcd.print(time);
+    for (int i = 0x8; i > 0; i >>= 1)
+        lcd.print(time & i);
     curNum = time;
 }
 
