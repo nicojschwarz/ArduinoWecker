@@ -185,7 +185,7 @@ int genNum()
     return (min + hour * 100);
 }
 
-//generate dot mask
+//generate context text
 int genText()
 {
     if (wakingTime >= 0)
