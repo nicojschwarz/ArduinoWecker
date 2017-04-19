@@ -1,0 +1,3 @@
+*.ino-old
+*.ods
+/Backup/*
