@@ -2,21 +2,17 @@
 #include <TimerOne.h>
 #include <LiquidCrystal.h>
 
-//#define B_DCF 3
-#define B_ALARM1 14 //... das Relais anzustellen
-#define B_ALARM2 15 //... den Alarm (Buzzer / Relais) an- / auszustellen
-#define B_SNOZ 16   //... Taster der die funktion hat ... den Alarm auszuschalten
-#define B_NAP 17    // mittagsschlaf
-#define B_SET 8     // drehencoder button <====================================================================================================================================
-//#define D_A 7 //drehencoder a
-//#define D_B 2 //drehencoder b
-
-#define encoder0PinA 2
-#define encoder0PinB 4
+#define DCF 2
+#define B_ALARM1 18 //... das Relais anzustellen
+#define B_ALARM2 19 //... den Alarm (Buzzer / Relais) an- / auszustellen
+#define B_SNOZ 20   //... Taster der die funktion hat ... den Alarm auszuschalten
+#define B_NAP 21    // mittagsschlaf
+#define B_A 22 //a (-)
+#define B_B 23 //b (+)
 
 #define BUZZER 10 //Buzzer
 
-LiquidCrystal lcd(12, 11, 6, 5, 7, 3); // initialize the library with the numbers of the interface pins
+LiquidCrystal lcd(12, 11, 6, 5, 4, 3); // initialize the library with the numbers of the interface pins
 
 int min = 0;  // Current Time (Minutes)
 int hour = 0; // Current Time (Hours)
@@ -37,15 +33,10 @@ int al_m2 = 10;  // Alarm2 time Min
 int al_h2 = 8;   // Alarm2 time Hour
 int al_day2 = 4; //redo alarm 2 : E) 1mal[1] I) immer[2] A) von montag bis freitag[3] W) samstag und sonntag[4]
 
-int snooze_s = 0; // Snooze Seconds
 int snooze_m = 5; // Snooze Minutes
 
 int napDuration_m = 45;
 int napDuration_h = 2;
-
-int alarmMode = 0;   //weckart 0: aus, 1: snooze, 2: Buzzer, 3: Relais
-int relayActive = 0; //dauerhafte aktivierung des Relais
-int setMode = 0;     //Setting mode
 
 int wakingTime = -1; //Vergangene Sekunden seit Waeckstart
 int napTime = -1;    //Vergangene Sekunden seit Mittagsschlafstart
@@ -62,12 +53,33 @@ int cural_m2 = 0;   //Momentan angezeigte alarm2 minute
 int cural_h2 = 0;   //Momentan angezeigte alarm2 stunde
 int cural_day2 = 0; //Momentan angezeigter alarm2 tag
 int curday = 0;     //Momentan angezeigter tag
-int aLastState;
-int aState;
 
-int m = 0;
+int setupAuswahlActiv = 0;  //Ob in Hauptmenue
 
-volatile unsigned int encoder0Pos = 0;
+int onlyOneRow = 0;   //Nur die erste Zeile der Displays wird gezeigt
+
+int dayExchange = 0;    //
+
+char wochentagExchange [2];
+
+struct {				//
+	unsigned int yy;	//received date
+	unsigned int mo;
+	unsigned int dd;
+	unsigned int vld;	//date is valid
+	unsigned int hh;	//received time
+	unsigned int mm;
+	unsigned int pmh;	//previus hh*60+mm
+	unsigned int vlt;	//valid time
+	//recieve data
+	unsigned char fin;	//buffer finalized for decode
+	unsigned char cnf;	//finalized count for debug
+	unsigned int cnt;	//bit count
+	unsigned int le;	//leading edge time
+	unsigned int tim;	//time since prevoius leading edge
+	char actv;			//dcf activ
+	signed int bit[60];	
+	} dcf;
 
 #define KY_TIM 10   //key [ms]
 #define KY_TIMX 500 //key repeat lock [ms]
@@ -106,6 +118,110 @@ void gptim() //gp-timer 1ms ir-service
 
     return;
 }
+//---internal-----dcf_rx--------------------------------------------------------------
+
+void dcf_rx(void)		//DCF77 interupt handler
+{
+    Serial.println("dcf_rx");
+	int tim;
+	byte val = digitalRead(DCF);
+	dcf.actv=1;
+	// dcf.tim inc 1ms done by gptime
+	// detected pulse is too short: incorrect pulse: reject
+	if((dcf.tim-dcf.le)<60) return;
+
+	// flank is detected quickly after previous flank up: reject
+	if(dcf.tim<700) return;
+
+//	if(val)						// Flank down invertiert
+	if(!val)					// Flank down
+	{
+		if (!dcf.le) dcf.le=dcf.tim;
+    Serial.println("0");
+//digitalWrite(DCFA, 0);
+		return;
+	} 
+
+	if(dcf.le) 					// Flank up
+	{
+    Serial.println("1");
+//digitalWrite(DCFA, 1);
+		tim=dcf.tim-dcf.le;		//trailing edge: low/high bit time
+		dcf.tim=tim;			//set time = last leading edge
+		if((dcf.le) > 1600)		//start detected
+			{
+			if(dcf.cnt==59) {dcf.fin=1; dcf.cnf++;}
+			dcf.cnt=0;
+			}
+		dcf.cnt++;				//save value
+		if(dcf.cnt<60) dcf.bit[dcf.cnt]=tim;
+		dcf.le=0;				//reset leading edge time
+		return;
+	
+	}  
+	return;
+}
+//----------------------------------------------------------------------dcf_getv-------
+unsigned int dcf_getv(int i0,int i9, int th)	//get dcf-decoded value
+{
+    Serial.println("dcf_getv");
+	//th bit schwellwert >th bit=1
+	unsigned int v,c,i;
+
+	v=0;
+	c=1;		//c=1,2,4,8,10,20,40,80;
+	for(i=i0;i<=i9;i++)
+		{
+		if(dcf.bit[i]>th) v=v+c;
+        c=c*2; if(c==16) c=10;
+		}
+	return(v);
+}
+//------------------------------------------------------------------------dcf_getc------
+unsigned int dcf_getc(int i0,int i9, int th)	//get dcf-parity-valid
+{
+    Serial.println("dcf_getc");
+	//th bit schwellwert >th bit=1
+	unsigned int i,v;
+	boolean p,c;
+
+	p=0; c=0;
+	if(dcf.bit[i9+1]>th) c=1;
+	for(i=i0;i<=i9;i++)
+		{
+		if(dcf.bit[i]>th) p=~p;		//toggle parity
+        }
+	if(p && c) return(1);			//ok
+	if((!p) && (!c)) return(1);		//ok
+	return(0);
+}
+
+//-----------------------dcfDecode----------------------------------------------------
+unsigned int dcfDecode()
+{
+    Serial.println("dcfDecode");
+	unsigned int th,mh;
+
+	//splittime: low max 120ms, high min 180ms
+	//th=112;			//ELV-9461059
+	th=130;				//CONRAD-HK56-BS/0
+	dcf.mm=dcf_getv(22,28,th);
+	dcf.hh=dcf_getv(30,35,th);
+	dcf.vlt=dcf_getc(22,28,th);				//parity mm
+	if(dcf.vlt) dcf.vlt=dcf_getc(30,35,th);	//parity hh
+	if(dcf.vlt) 							//previous+1 = current
+		{mh=(dcf.hh*60)+dcf.mm;
+		if(((dcf.pmh+1)%1440) != mh) dcf.vlt=0;
+		dcf.pmh=mh;
+		}
+	dcf.dd=dcf_getv(37,42,th);
+	dcf.mo=dcf_getv(46,50,th);
+	dcf.yy=dcf_getv(51,58,th);
+	dcf.vld=dcf_getc(37,58,th);
+	dcf.fin=0;		//decoded
+
+	return(1);
+}
 //----------------------------------------------------setup----------------------------
 
 void setup() // The setup routine runs once, when you press Reset:
@@ -117,19 +233,13 @@ void setup() // The setup routine runs once, when you press Reset:
     //delay(5000);
 
     pinMode(BUZZER, OUTPUT);
-    //pinMode(RELAY, OUTPUT);
 
     pinMode(B_ALARM1, INPUT);
     pinMode(B_ALARM2, INPUT);
     pinMode(B_SNOZ, INPUT);
     pinMode(B_NAP, INPUT);
-    pinMode(B_SET, INPUT);
-
-    //pinMode(D_A, INPUT);
-    //pinMode(D_B, INPUT);
-
-    pinMode(encoder0PinA, INPUT);
-    pinMode(encoder0PinB, INPUT);
+    pinMode(B_A, INPUT);
+    pinMode(B_A, INPUT);
 
     //pinMode(B_DCF, INPUT_PULLUP);
 
@@ -140,14 +250,28 @@ void setup() // The setup routine runs once, when you press Reset:
     Timer1.attachInterrupt(gptim); // attach service
                                    //aLastState = digitalRead(D_A);  // Reads the initial state of REA
 
-    pinMode(encoder0PinA, INPUT);
-    digitalWrite(encoder0PinA, HIGH); // turn on pull-up resistor
-    pinMode(encoder0PinB, INPUT);
-    digitalWrite(encoder0PinB, HIGH); // turn on pull-up resistor
-
-    attachInterrupt(0, doEncoder, CHANGE); // encoder pin on interrupt 0 - pin 2
     Serial.begin(9600);
-    Serial.println("start"); // a personal quirk
+
+    Serial.println("dcfSetup");
+
+	dcf.yy=0;
+	dcf.mo=0;
+	dcf.dd=0;
+	dcf.hh=0;
+	dcf.mm=0;
+	dcf.pmh=0;
+	dcf.vld=0;
+	dcf.vlt=0;
+	dcf.cnt=0;
+	dcf.cnf=0;
+	dcf.fin=0;
+	dcf.le=0;
+	dcf.tim=0;
+	dcf.actv=0;
+
+	pinMode(DCF,INPUT);					//input dcf-signal
+//	attachInterrupt(3, dcf_rx, CHANGE);	//DCF enable ir3
+	attachInterrupt(1, dcf_rx, CHANGE);	//DCF enable ir1
 }
 
 //-----------------------------------------------keys---------------------------------
@@ -156,15 +280,17 @@ unsigned char getkey(void) //get a key
     unsigned char ky = 0;
 
     if (digitalRead(B_ALARM1))
-        ky = 1; //alarm2
+        ky = 1; //alarm1
     else if (digitalRead(B_ALARM2))
         ky = 2; //alarm2
     else if (digitalRead(B_SNOZ))
         ky = 3; //snooze
     else if (digitalRead(B_NAP))
         ky = 4; //nap (Mittagsschlaf)
-    else if (digitalRead(B_SET))
-        ky = 5; //set
+    else if (digitalRead(B_A))
+        ky = 5; //a (+)
+    else if (digitalRead(B_B))
+        ky = 6; //b (-)
 
     //reset key
     if (!ky)
@@ -197,31 +323,16 @@ unsigned char getkey(void) //get a key
 
     return (0);
 }
-//--------------------------------------------------------------------------pot--------
-/*int pot() {
-  aState = digitalRead(D_A); // Reads the "current" state of the outputA
-  // If the previous and the current state of the outputA are different, that means a Pulse has occured
-  if (aState != aLastState) {
-    // If the outputB state is different to the outputA state, that means the encoder is rotating clockwise
-    if (digitalRead(D_B) != aState) {
-      return 1;
-    } else {
-      return -1;
-    }
-  }
-  aLastState = aState; // Updates the previous state of the outputA with the current state
-  return 0;
-}*/
-//------------------------------------------generate time-----------------------------
+//------------------------------------------generate time----------------------------
 int genTime()
 {
     int tmpMin = tims / 60 + to_m;
     min = tmpMin % 60;
-    hour = (tmpMin / 60 + to_h) % 24;
+    hour = (tmpMin / 60 + dcf.hh/*to_h*/) % 24;
     return (min + hour * 100);
 }
-//---------------------------------writeTimeIn xx:yy format to LCD---------------------
-void writeTime(int i, int time, int x, int y)
+//---------------------------------nummer mit 0 am anfang auf lcd---------------------
+void fulPlott (int i, int time, int x, int y)
 {
     while (i)
     {
@@ -232,6 +343,14 @@ void writeTime(int i, int time, int x, int y)
     }
 }
 
+//------------------------------------writeTimeIn xx:yy format to LCD-----------------
+void writeTime (int time1, int time2, int x, int y) {
+    fulPlott(2, time1, x, y);
+    lcd.setCursor(x+2, y);
+    lcd.print(":");
+    fulPlott(2, time2, x+3, y);
+
+}
 //------------------------------------------timeTilAlarm------------------------------
 int timeTilAlarm()
 {
@@ -241,149 +360,302 @@ int timeTilAlarm()
     hour = (tTAtmpMin / 60 + to_h) % 24;
     return (tTAmin + tTAhour * 100);
 }
-
-//-------------------------------------------update display----------------------------
-void display(int showSecondRow, int updateAllDisplay)
+//----------------------------------------------------------------setupAuswahl---------
+void setupAuswahl()
 {
-    if (showSecondRow)
+
+    switch (setupAuswahlActiv)
     {
-        goto onlyRowOne;
+        case 1:
+            switch (getkey())
+            {
+                case 1:
+                    setupAuswahlActiv = 2;
+                    break;
+                case 2:
+                    setupAuswahlActiv = 5;
+                    break;
+                case 4:
+                    setupAuswahlActiv = 8;
+                    break;
+                case 5: case 6:
+                    setupAuswahlActiv = 0;
+                    break;
+            }
+            break;
+        case 2:
+            switch (getkey())
+            {
+                case 1:
+                    setupAuswahlActiv = 3;
+                    break;
+                case 5:
+                    al_h1++;
+                    break;
+                case 6:
+                    al_h1--;
+                    break;
+            }
+            break;
+        case 3:
+                switch (getkey())
+                {
+                    case 1:
+                        setupAuswahlActiv = 4;
+                        setupZweiteZeile(1);
+                        break;
+                    case 5:
+                        al_m1++;
+                        break;
+                    case 6:
+                        al_m1--;
+                        break;
+                }
+                break;
+        case 4:
+            switch (getkey())
+            {
+                case 1:
+                    setupAuswahlActiv = 0;
+                    break;
+                case 5:
+                    if (al_day1 < 4) {
+                        al_day1++;
+                    }
+                    break;
+                case 6:
+                    if (al_day1 > 1) {
+                        al_day1--;
+                    }
+                    break;
+            }
+            break;
+        case 5:
+            switch (getkey())
+                {
+                    case 2:
+                        setupAuswahlActiv = 6;
+                        break;
+                    case 5:
+                        al_h2++;
+                        break;
+                    case 6:
+                        al_h2--;
+                        break;
+                }
+                break;
+        case 6:
+            switch (getkey())
+                {
+                    case 2:
+                        setupAuswahlActiv = 7;
+                        setupZweiteZeile(1);
+                        break;
+                    case 5:
+                        al_m2++;
+                        break;
+                    case 6:
+                        al_m2--;
+                        break;
+                }
+                break;
+        case 7:
+            switch (getkey())
+                {
+                    case 2:
+                        setupAuswahlActiv = 0;
+                        break;
+                    case 5:
+                        if (al_day2 < 4) {
+                            al_day2++;
+                        }
+                        break;
+                    case 6:
+                        if (al_day2 > 1) {
+                            al_day2--;
+                        }
+                        break;
+                }
+            break;
+        case 8:
+            switch (getkey())
+                {
+                    case 4:
+                        setupAuswahlActiv = 9;
+                        break;
+                    case 5:
+                        napDuration_h++;
+                        break;
+                    case 6:
+                        napDuration_h--;
+                        break;
+                }
+                break;
+        case 9:
+            switch (getkey())
+                {
+                    case 4:
+                        setupAuswahlActiv = 0;
+                        break;
+                    case 5:
+                        napDuration_m++;
+                        break;
+                    case 6:
+                        napDuration_m--;
+                        break;
+                }
+                break;
     }
-    //-----------------------2Displayzeile-------------------------------
+    if (!setupAuswahlActiv) {
+        lcd.clear();
+        onlyOneRow = 0;
+        ersteDisplayZeile(1);
+        zweiteDisplayZeile(1);
+    }
+}
+
+//--------------------------------------------wochentageReRun-----------------------------
+char wochentageReRun(int day) {
+    switch (day)
+        {
+        case 0:
+            return '0';
+            break;
+        case 1:
+            return 'E';
+            break;
+        case 2:
+            return 'I';
+            break;
+        case 3:
+            return 'A';
+            break;
+        case 4:
+            return 'W';
+            break;
+        }
+}
+//------------------------------------------wochentage-------------------------------------
+char wochentage(int day, int durchgang) {
+    if (durchgang) {
+        switch (day) {
+            case 1:
+                return 'M';
+            case 2:
+                return 'D';
+            case 3:
+                return 'M';
+            case 4:
+                return 'D';
+            case 5:
+                return 'F';
+            case 6:
+                return 'S';
+            case 7:
+                return 'S';
+        }
+    }else {
+        switch (day) {
+                case 1:
+                    return 'o';
+                case 2:
+                    return 'i';
+                case 3:
+                    return 'i';
+                case 4:
+                    return 'o';
+                case 5:
+                    return 'r';
+                case 6:
+                    return 'a';
+                case 7:
+                    return 'o';
+        }
+    }
+}
+//-------------------------------------------2Displayzeile----------------------------
+void zweiteDisplayZeile(int updateAllDisplay)
+{
     int cal_day1;
     cal_day1 = al_day1;
-    if (al_day1 != cural_day1 /*|| updateAllDisplay*/)
+    if (al_day1 != cural_day1 || updateAllDisplay)
     {
 
         lcd.setCursor(0, 1); //widerhohlungsmodus
 
-        switch (al_day1)
-        {
-        case 0:
-            lcd.print("0");
-            break;
-        case 1:
-            lcd.print("E");
-            break;
-        case 2:
-            lcd.print("I");
-            break;
-        case 3:
-            lcd.print("A");
-            break;
-        case 4:
-            lcd.print("W");
-            break;
-        }
+        lcd.print(wochentageReRun(al_day1));
+
         cural_day1 = cal_day1;
     }
 
     int cal_h1;
-    cal_h1 = al_h1;
-    if (cal_h1 != cural_h1 /*|| updateAllDisplay*/)
-    {
-        writeTime(2, al_h1, 1, 1);
-        cural_h1 = cal_h1;
-    }
-
-    lcd.setCursor(3, 1);
-    lcd.print("|");
-
     int cal_m1;
+    cal_h1 = al_h1;
     cal_m1 = al_m1;
-    if (cal_m1 != cural_m1 /*|| updateAllDisplay*/)
+    if (cal_m1 != cural_m1 || cal_h1 != cural_h1 || updateAllDisplay)
     {
-        writeTime(2, al_m1, 4, 1);
+        writeTime(al_h1, al_m1, 1, 1);
+        cural_h1 = cal_h1;
         cural_m1 = cal_m1;
     }
 
     int cal_day2;
     cal_day2 = al_day2;
-    if (cal_day2 != cural_day2 /*|| updateAllDisplay*/)
+    if (cal_day2 != cural_day2 || updateAllDisplay)
     {
         lcd.setCursor(7, 1); //widerhohlungsmodus
-        switch (al_day2)
-        {
-        case 0:
-            lcd.print("0");
-            break;
-        case 1:
-            lcd.print("E");
-            break;
-        case 2:
-            lcd.print("I");
-            break;
-        case 3:
-            lcd.print("A");
-            break;
-        case 4:
-            lcd.print("W");
-            break;
-        }
+
+        lcd.print(wochentageReRun(al_day2));
+
         cural_day2 = cal_day2;
     }
 
     int cal_h2;
-    cal_h2 = al_h2;
-    if (cal_h2 != cural_h2 /*|| updateAllDisplay*/)
-    {
-        writeTime(2, al_h2, 8, 1);
-        cural_h2 = cal_h2;
-    }
-
-    lcd.setCursor(10, 1);
-    lcd.print("|");
-
     int cal_m2;
+    cal_h2 = al_h2;
     cal_m2 = al_m2;
-    if (cal_m2 != cural_m2 /*|| updateAllDisplay*/)
+    if (cal_h2 != cural_h2 || cal_m2 != cural_m2 || updateAllDisplay)
     {
-        writeTime(2, al_m2, 11, 1);
+        writeTime(al_h2, al_m2, 8, 1);
+        cural_h2 = cal_h2;
         cural_m2 = cal_m2;
     }
 
     int cday;
     cday = day;
-    if (cday != curday /*|| updateAllDisplay*/)
+    if (cday != curday || updateAllDisplay)
     {
+        lcd.setCursor(14, 1);
+        lcd.print(wochentage(day,1));
         lcd.setCursor(15, 1);
-        lcd.print(day);
+        lcd.print(wochentage(day,0));
         curday = cday;
     }
+}
+//-------------------1Displayzeile---------------------------------------------------
 
-//-------------------1Displayzeile------------------------------------
-onlyRowOne:
-    //uhrzeit
+void ersteDisplayZeile(int updateAllDisplay){
+
     int cTime = genTime();
-    if (cTime != curTime /*|| updateAllDisplay*/)
+    if (cTime != curTime || updateAllDisplay)
     {
-        writeTime(2, hour, 0, 0);
-        lcd.setCursor(2, 0);
-        lcd.print("|");
-        writeTime(2, min, 3, 0);
+        writeTime(hour, min, 0, 0);
         curTime = cTime;
     }
     //zeit bis alarm
     int ctTA = timeTilAlarm();
-    if (ctTA != curtTA /*|| updateAllDisplay*/)
+    if (ctTA != curtTA || updateAllDisplay)
     {
-        writeTime(2, tTAhour, 6, 0);
-        lcd.setCursor(8, 0);
-        lcd.print("|");
-        writeTime(2, tTAmin, 9, 0);
+        writeTime(tTAhour, tTAmin, 6, 0);
         curtTA = ctTA;
     }
     int cddmm = date + month * 100;
-    if (cddmm != curddmm /*|| updateAllDisplay*/)
+    if (cddmm != curddmm || updateAllDisplay)
     {
-        writeTime(2, date, 12, 0);
-        writeTime(2, month, 14, 0);
+        fulPlott(2, date, 12, 0);
+        fulPlott(2, month, 14, 0);
         curddmm = cddmm;
     }
-    //DD Datum
-    // writeTime(2, date, 12, 0);
-    //MM Datum
-    // writeTime(2, month, 14, 0);
 }
 //--------------------------------------------input umgang-------------------------
 void handleInput()
@@ -391,76 +663,136 @@ void handleInput()
     switch (getkey())
     {
     case 1:
+        //Alarm 1 scharfstellen / entschaerfen
         break;
     case 2:
+        //Alarm 1 scharfstellen / entschaerfen
         break;
     case 3:
+    //Sznooze des alarm
         break;
     case 4:
+    //Nap Start / End
         break;
     case 5:
+        setupZweiteZeile(0);
+        setupAuswahlActiv = 1;
+        break;
+    case 6:
+        setupZweiteZeile(0);
+        setupAuswahlActiv = 1;
         break;
     }
 }
-
-void doEncoder()
-{
-    /* If pinA and pinB are both high or both low, it is spinning
-   * forward. If they're different, it's going backward.
-   *
-   * For more information on speeding up this process, see
-   * [Reference/PortManipulation], specifically the PIND register.
-   */
-    if (digitalRead(encoder0PinA) == digitalRead(encoder0PinB))
-    {
-        encoder0Pos++;
+//-------------------------------------------------setupZweiteZeile----------------
+void setupZweiteZeile(int updateAllDisplay){
+    if (!onlyOneRow) {
+        lcd.clear();
+        ersteDisplayZeile(1);
+        onlyOneRow = 1;
     }
-    else
+    switch (setupAuswahlActiv)
     {
-        encoder0Pos--;
-    }
+    case 1:
+        lcd.setCursor(0, 1);
+        lcd.print("Menue");
+        break;
+    case 2:
+        lcd.setCursor(0, 1);
+        lcd.print("A 1 Stunde");
+        writeTime(al_h1, al_m1, 11, 1);
+        break;
+    case 3:
+        lcd.setCursor(0, 1);
+        lcd.print("A 1 Minute");
+        writeTime(al_h1, al_m1, 11, 1);
+        break;
+    case 4:
+        int cal_day1;
+        cal_day1 = al_day1;
+        if (cal_day1 != cural_day1 || updateAllDisplay)
+        {
+            lcd.clear();
+            ersteDisplayZeile(1);
+            lcd.setCursor(0, 1);
+            lcd.print("A 1 reRun");
+            lcd.setCursor(15, 1); //widerhohlungsmodus
 
-    Serial.println(encoder0Pos, DEC);
+            lcd.print(wochentageReRun(al_day1));
+
+            cural_day1 = cal_day1;
+        }
+        break;
+    case 5:
+        lcd.setCursor(0, 1);
+        lcd.print("A 2 Stunde");
+        writeTime(al_h2, al_m2, 11, 1);
+        break;
+    case 6:
+        lcd.setCursor(0, 1);
+        lcd.print("A 2 Minute");
+        writeTime(al_h2, al_m2, 11, 1);
+        break;
+    case 7:
+        int cal_day2;
+        cal_day2 = al_day2;
+        if (cal_day2 != cural_day2 || updateAllDisplay)
+        {
+            lcd.clear();
+            ersteDisplayZeile(1);
+            lcd.setCursor(0, 1);
+            lcd.print("A 2 reRun");
+            lcd.setCursor(15, 1); //widerhohlungsmodus
+
+            lcd.print(wochentageReRun(al_day2));
+
+            cural_day2 = cal_day2;
+        }
+        break;
+    case 8:
+        lcd.setCursor(0, 1);
+        lcd.print("Mittag H");
+        writeTime(napDuration_h, napDuration_m, 11, 1);
+        break;
+    case 9:
+        lcd.setCursor(0, 1);
+        lcd.print("Mittag M");
+        writeTime(napDuration_h, napDuration_m, 11, 1);
+        break;
+    }
 }
-
-/* See this expanded function to get a better understanding of the
- * meanings of the four possible (pinA, pinB) value pairs:
- */
-void doEncoder_Expanded()
+//-------------------------------Alarm - ausfuehrung--------------------------------
+void doAlarm()
 {
-    if (digitalRead(encoder0PinA) == HIGH)
-    { // found a low-to-high on channel A
-        if (digitalRead(encoder0PinB) == LOW)
-        {                                  // check channel B to see which way
-                                           // encoder is turning
-            encoder0Pos = encoder0Pos - 1; // CCW
-        }
-        else
-        {
-            encoder0Pos = encoder0Pos + 1; // CW
-        }
+    if (wakingTime >= 0) tone(BUZZER, 300, 500);
+}
+//-----------------------------Alarm - Aktivierung-------------------------------------
+void checkAlarm()
+{
+    if (napDuration_h * 60 + napDuration_m == napTime) {
+        wakingTime = 0;
+    }else if (((min == al_m1 && hour == al_h1) || (min == al_m2 && hour == al_h2 ))&& tims % 60 == 0) {
+        wakingTime = 0;
+    }else if (snoozeTime == snooze_m * 60) {
+        wakingTime = 0;
     }
-    else // found a high-to-low on channel A
-    {
-        if (digitalRead(encoder0PinB) == LOW)
-        {                                  // check channel B to see which way
-                                           // encoder is turning
-            encoder0Pos = encoder0Pos + 1; // CW
-        }
-        else
-        {
-            encoder0Pos = encoder0Pos - 1; // CCW
-        }
+}
+//-------------------------alarmDeactivate-----------------------------------------
+void alarmDeactivate() {
+    switch (getkey()) {
+        case 1:
+            wakingTime = -1;
+            if (snoozeTime != -1) snoozeTime = 0;
+            break;
+        case 3:
+            wakingTime = -1;
+            snoozeTime = -1;
+            break;
     }
-    Serial.println(encoder0Pos, DEC); // debug - remember to comment out
-                                      // before final program run
-                                      // you don't want serial slowing down your program if not needed
 }
 //- -----------------------------------------loop----------------------------------
 void loop()
 {
-
-    //handleInput();
 
     //Alarm - Aktivierung
     //checkAlarm();
@@ -468,10 +800,38 @@ void loop()
     //Alarm - ausfuehrung
     //doAlarm();
 
-    //display(0,0);
+    if (wakingTime < 0 ) {
+        if (setupAuswahlActiv) {
+            setupAuswahl();
+        }else {
+            handleInput();
+        }
+    }else {
+        alarmDeactivate();
+    }
 
-    //m += pot();
+    /*if (setupAuswahlActiv) {
+        setupAuswahl();
+    }else {
+        handleInput();
+    }*/
 
-    //lcd.setCursor(0, 0);
-    //lcd.print(m);
+    if (!onlyOneRow) {
+        zweiteDisplayZeile(0);
+        ersteDisplayZeile(0);
+    }else {
+        setupZweiteZeile(0);
+    }
+
+    //dcfDecode();
+
+    //Alarm - Aktivierung
+    checkAlarm();
+
+    //Alarm - ausfuehrung
+    doAlarm();
+
+    //tone(BUZZER, 300, 500);
+
+    
 }
