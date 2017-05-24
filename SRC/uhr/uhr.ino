@@ -18,7 +18,7 @@ struct Time
 {
     int m; //Minutes
     int h; //Stunde
-}
+};
 
 struct DateTime
 {
@@ -26,29 +26,22 @@ struct DateTime
     int date = 23;
     int month = 4;
     int day = 7;
+    int year = 2200;
 };
 
 struct Alarm
 {
     Time tim;
-    int day;    //redo alarm 1 : E) 1mal[1] I) immer[2] A) von montag bis freitag[3] W) samstag und sonntag[4]
-    int active; //activate or deactivate al 1
+    int day; //redo alarm 1 : E) 1mal[1] I) immer[2] A) von montag bis freitag[3] W) samstag und sonntag[4]
 };
 
-struct AlarmCur
-{
-    int m;   //Momentan angezeigte alarm2 minute
-    int h;   //Momentan angezeigte alarm2 stunde
-    int day; //Momentan angezeigter alarm2 tag
-};
+struct DateTime t; // current time
+struct Time to;    // Time offset
 
-DateTime t; // current time
-Time to;    // Time offset
+struct Alarm al1;
+struct Alarm al2;
 
-Alarm al1;
-Alarm al2;
-
-Time napDuration;
+struct Time napDuration;
 int snooze = 5; // Snooze Minutes
 
 int wakingTime = -1; //Vergangene Sekunden seit Waeckstart
@@ -60,8 +53,8 @@ int curtTA = 0;  //Momentan angezeigte zeit bis alarm
 int curddmm = 0; //Momentan angezeigter tag und monat
 int curday = 0;  //Momentan angezeigter tag
 
-AlarmCur curAl1;
-AlarmCur curAl2;
+struct Alarm curAl1;
+struct Alarm curAl2;
 
 int setupAuswahlActiv = 0; //Ob in Hauptmenue
 
@@ -71,7 +64,10 @@ int dayExchange = 0; //
 
 char wochentagExchange[2];
 
-char wochentage[7][3] = {"Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"};
+const char wochentage[7][3] = {"Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"};
+const char wochentageReRun[8] = {'E', 'I', 'A', 'W', 'e', 'i', 'a', 'w'};
+
+const short monthLengths[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
 struct
 {                    //
@@ -120,6 +116,21 @@ void gptim() //gp-timer 1ms ir-service
     {
         timms = 999;
         tims = (tims + 1) % 86400; //sec timer
+        if (tims == 0)
+        {
+            t.day = (t.day + 1) % 7;
+
+            if (((t.month == 2 && t.year % 4 == 0) ? 1 : 0) + monthLengths[t.month - 1] <= t.date)
+            {
+                t.date = 0;
+                if (++t.month == 13)
+                {
+                    t.month = 1;
+                    t.year++;
+                }
+            }
+            t.date++;
+        }
         if (wakingTime >= 0)
             wakingTime++; //wakingTime ist -1 wenn der wecker nicht gerade weckt
         if (napTime >= 0)
@@ -219,7 +230,6 @@ unsigned int dcf_getc(int i0, int i9, int th) //get dcf-parity-valid
         return (1); //ok
     return (0);
 }
-
 //-----------------------dcfDecode----------------------------------------------------
 unsigned int dcfDecode()
 {
@@ -254,8 +264,8 @@ unsigned int dcfDecode()
 
     return (1);
 }
-//----------------------------------------------------setup----------------------------
 
+//----------------------------------------------------setup----------------------------
 void setup() // The setup routine runs once, when you press Reset:
 {
     //Serial.begin(9600);
@@ -301,15 +311,13 @@ void setup() // The setup routine runs once, when you press Reset:
     dcf.tim = 0;
     dcf.actv = 0;
 
-    al1.m = 30;
-    al1.h = 6;
+    al1.tim.m = 30;
+    al1.tim.h = 6;
     al1.day = 3;
-    al1.active = 0;
 
-    al2.m = 30;
-    al2.h = 6;
+    al2.tim.m = 30;
+    al2.tim.h = 6;
     al2.day = 3;
-    al2.active = 0;
 
     to.m = 30;
     to.h = 12;
@@ -376,6 +384,7 @@ int genTime()
 {
     return (t.tim.m + t.tim.h * 100);
 }
+//----------------------------------------------calculate current time---------------
 void calcCT()
 {
     int tmpMin = tims / 60 + to.m;
@@ -405,13 +414,45 @@ void writeTime(int time1, int time2, int x, int y)
 //------------------------------------------timeTilAlarm------------------------------
 int timeTilAlarm()
 {
-    /*int tTAtmpMin = tims / 60 + to.m;
-    min = tTAtmpMin % 60;
-    hour = (tTAtmpMin / 60 + to.h) % 24;
 
-    return (tTAmin + tTAhour * 100);
+    int til[4] = {32767, 32767, 32767, 32767};
 
-    (hour * 60 + min) - (al1.h * 60 + al1.m)*/
+    if (napTime >= 0)
+    {
+        til[0] = napDuration.h * 60 + napDuration.m - napTime;
+    }
+
+    if (snoozeTime >= 0)
+    {
+        til[1] = snooze - snoozeTime;
+    }
+
+    int al1_days = 0; //TODO: Unit test
+    for (int d = 0; !checkAlarmRepeatAtDay(al1.day, (t.day + d) % 7) && d < 7; d++)
+        al1_days++;
+    if (al1.tim.h * 60 + al1.tim.m < t.tim.h * 60 + t.tim.m)
+        al1_days++;
+    if (al1_days < 7)
+        til[2] = (24 * 60 * al1_days) + ((al1.tim.h * 60 + al1.tim.m) - (t.tim.h * 60 + t.tim.m));
+
+    int al2_days = 0; //TODO: Unit test
+    for (int d = 0; !checkAlarmRepeatAtDay(al2.day, (t.day + d) % 7) && d < 7; d++)
+        al2_days++;
+    if (al2.tim.h * 60 + al2.tim.m < t.tim.h * 60 + t.tim.m)
+        al2_days++;
+    if (al2_days < 7)
+        til[3] = (24 * 60 * al2_days) + ((al2.tim.h * 60 + al2.tim.m) - (t.tim.h * 60 + t.tim.m));
+
+    int maxVal = 0;
+    for (int i = 0; i < 4; i++)
+        if (til[i] > maxVal)
+            maxVal = til[i];
+
+    if (maxVal == 32767)
+        return 0;
+    if (maxVal >= 24 * 60)
+        return -(maxVal / (24 * 60) * 100 + (maxVal / 60) % 24);
+    return maxVal / 60 * 100 + maxVal % 60;
 }
 //----------------------------------------------------------------setupAuswahl---------
 void setupAuswahl()
@@ -444,10 +485,12 @@ void setupAuswahl()
             setupAuswahlActiv = 3;
             break;
         case 5:
-            al1.h++;
+            al1.tim.h++;
+            if (al1.tim.h >= 60)
+                al1.tim.h = 0;
             break;
         case 6:
-            al1.h--;
+            al1.tim.h--;
             break;
         }
         break;
@@ -459,10 +502,10 @@ void setupAuswahl()
             setupZweiteZeile(1);
             break;
         case 5:
-            al1.m++;
+            al1.tim.m++;
             break;
         case 6:
-            al1.m--;
+            al1.tim.m--;
             break;
         }
         break;
@@ -493,10 +536,10 @@ void setupAuswahl()
             setupAuswahlActiv = 6;
             break;
         case 5:
-            al2.h++;
+            al2.tim.h++;
             break;
         case 6:
-            al2.h--;
+            al2.tim.h--;
             break;
         }
         break;
@@ -508,10 +551,10 @@ void setupAuswahl()
             setupZweiteZeile(1);
             break;
         case 5:
-            al2.m++;
+            al2.tim.m++;
             break;
         case 6:
-            al2.m--;
+            al2.tim.m--;
             break;
         }
         break;
@@ -522,13 +565,13 @@ void setupAuswahl()
             setupAuswahlActiv = 0;
             break;
         case 5:
-            if (al2.day < 4)
+            if (al2.day < 3)
             {
                 al2.day++;
             }
             break;
         case 6:
-            if (al2.day > 1)
+            if (al2.day > 0)
             {
                 al2.day--;
             }
@@ -542,10 +585,10 @@ void setupAuswahl()
             setupAuswahlActiv = 9;
             break;
         case 5:
-            napDuration_h++;
+            napDuration.h++;
             break;
         case 6:
-            napDuration_h--;
+            napDuration.h--;
             break;
         }
         break;
@@ -556,10 +599,10 @@ void setupAuswahl()
             setupAuswahlActiv = 0;
             break;
         case 5:
-            napDuration_m++;
+            napDuration.m++;
             break;
         case 6:
-            napDuration_m--;
+            napDuration.m--;
             break;
         }
         break;
@@ -572,64 +615,33 @@ void setupAuswahl()
         zweiteDisplayZeile(1);
     }
 }
-
-//--------------------------------------------wochentageReRun-----------------------------
-char wochentageReRun(int day)
-{
-    switch (day)
-    {
-    case 0:
-        return '0';
-        break;
-    case 1:
-        return 'E';
-        break;
-    case 2:
-        return 'I';
-        break;
-    case 3:
-        return 'A';
-        break;
-    case 4:
-        return 'W';
-        break;
-    }
-}
 //-------------------------------------------2Displayzeile----------------------------
 void zweiteDisplayZeile(int updateAllDisplay)
 {
-    int cal_day1;
-    cal_day1 = al1.day;
     if (al1.day != curAl1.day || updateAllDisplay)
     {
 
         lcd.setCursor(0, 1); //widerhohlungsmodus
 
-        lcd.print(wochentageReRun(al1.day));
+        lcd.print(wochentageReRun[al1.day]);
 
-        curAl1.day = cal_day1;
+        curAl1.day = al1.day;
     }
 
-    int cal_h1;
-    int cal_m1;
-    cal_h1 = al1.h;
-    cal_m1 = al1.m;
-    if (cal_m1 != curAl1.m || cal_h1 != curAl1.h || updateAllDisplay)
+    if (al1.tim.m != curAl1.tim.m || al1.tim.h != curAl1.tim.h || updateAllDisplay)
     {
-        writeTime(al1.h, al1.m, 1, 1);
-        curAl1.h = cal_h1;
-        curAl1.m = cal_m1;
+        writeTime(al1.tim.h, al1.tim.m, 1, 1);
+        curAl1.tim.h = al1.tim.h;
+        curAl1.tim.m = al1.tim.m;
     }
 
-    int cal_day2;
-    cal_day2 = al2.day;
-    if (cal_day2 != curAl2.day || updateAllDisplay)
+    if (al2.day != curAl2.day || updateAllDisplay)
     {
         lcd.setCursor(7, 1); //widerhohlungsmodus
 
-        lcd.print(wochentageReRun(al2.day));
+        lcd.print(wochentageReRun[al2.day]);
 
-        curAl2.day = cal_day2;
+        curAl2.day = al2.day;
     }
 
     if (al2.tim.h != curAl2.tim.h || al2.tim.m != curAl2.tim.m || updateAllDisplay)
@@ -654,21 +666,34 @@ void ersteDisplayZeile(int updateAllDisplay)
     int cTime = genTime();
     if (cTime != curTime || updateAllDisplay)
     {
-        writeTime(hour, min, 0, 0);
+        writeTime(t.tim.h, t.tim.m, 0, 0);
         curTime = cTime;
     }
     //zeit bis alarm
     int ctTA = timeTilAlarm();
     if (ctTA != curtTA || updateAllDisplay)
     {
-        writeTime(tTAhour, tTAmin, 6, 0);
+        if (ctTA > 0) // Alarm klingelt in ctTA (Format: hhmm)
+            writeTime(ctTA / 100, ctTA % 100, 6, 0);
+        else if (ctTA == 0) // Alarm deaktiviert
+        {
+            lcd.setCursor(6, 0);
+            lcd.print("     ");
+        }
+        else // Alarm ist mehrere tage hin (ctTA format: -tthh) auf display: 'T't:hh. zB T3:04 (3 tage und 4 stunden)
+        {
+            ctTA = -ctTA;
+            writeTime(ctTA / 100, ctTA % 100, 6, 0);
+            lcd.setCursor(6, 0);
+            lcd.print("T");
+        }
         curtTA = ctTA;
     }
-    int cddmm = date + month * 100;
+    int cddmm = t.date + t.month * 100;
     if (cddmm != curddmm || updateAllDisplay)
     {
-        fulPlott(2, date, 12, 0);
-        fulPlott(2, month, 14, 0);
+        fulPlott(2, t.date, 12, 0);
+        fulPlott(2, t.month, 14, 0);
         curddmm = cddmm;
     }
 }
@@ -678,17 +703,21 @@ void handleInput()
     switch (getkey())
     {
     case 1:
-
-        //Alarm 1 scharfstellen / entschaerfen
+        if (al1.day > 3)
+            al1.day -= 4;
+        else
+            al1.day += 4;
         break;
     case 2:
-        //Alarm 1 scharfstellen / entschaerfen
+        if (al2.day > 3)
+            al2.day -= 4;
+        else
+            al2.day += 4;
         break;
     case 3:
-        //Sznooze des alarm
         break;
     case 4:
-        //Nap Start / End
+        napTime = 0;
         break;
     case 5:
         setupZweiteZeile(0);
@@ -718,17 +747,15 @@ void setupZweiteZeile(int updateAllDisplay)
     case 2:
         lcd.setCursor(0, 1);
         lcd.print("A 1 Stunde");
-        writeTime(al1.h, al1.m, 11, 1);
+        writeTime(al1.tim.h, al1.tim.m, 11, 1);
         break;
     case 3:
         lcd.setCursor(0, 1);
         lcd.print("A 1 Minute");
-        writeTime(al1.h, al1.m, 11, 1);
+        writeTime(al1.tim.h, al1.tim.m, 11, 1);
         break;
     case 4:
-        int cal_day1;
-        cal_day1 = al1.day;
-        if (cal_day1 != curAl1.day || updateAllDisplay)
+        if (al1.day != curAl1.day || updateAllDisplay)
         {
             lcd.clear();
             ersteDisplayZeile(1);
@@ -736,25 +763,23 @@ void setupZweiteZeile(int updateAllDisplay)
             lcd.print("A 1 reRun");
             lcd.setCursor(15, 1); //widerhohlungsmodus
 
-            lcd.print(wochentageReRun(al1.day));
+            lcd.print(wochentageReRun[al1.day]);
 
-            curAl1.day = cal_day1;
+            curAl1.day = al1.day;
         }
         break;
     case 5:
         lcd.setCursor(0, 1);
         lcd.print("A 2 Stunde");
-        writeTime(al2.h, al2.m, 11, 1);
+        writeTime(al2.tim.h, al2.tim.m, 11, 1);
         break;
     case 6:
         lcd.setCursor(0, 1);
         lcd.print("A 2 Minute");
-        writeTime(al2.h, al2.m, 11, 1);
+        writeTime(al2.tim.h, al2.tim.m, 11, 1);
         break;
     case 7:
-        int cal_day2;
-        cal_day2 = al2.day;
-        if (cal_day2 != curAl2.day || updateAllDisplay)
+        if (al2.day != curAl2.day || updateAllDisplay)
         {
             lcd.clear();
             ersteDisplayZeile(1);
@@ -762,20 +787,20 @@ void setupZweiteZeile(int updateAllDisplay)
             lcd.print("A 2 reRun");
             lcd.setCursor(15, 1); //widerhohlungsmodus
 
-            lcd.print(wochentageReRun(al2.day));
+            lcd.print(wochentageReRun[al2.day]);
 
-            curAl2.day = cal_day2;
+            curAl2.day = al2.day;
         }
         break;
     case 8:
         lcd.setCursor(0, 1);
         lcd.print("Mittag H");
-        writeTime(napDuration_h, napDuration_m, 11, 1);
+        writeTime(napDuration.h, napDuration.m, 11, 1);
         break;
     case 9:
         lcd.setCursor(0, 1);
         lcd.print("Mittag M");
-        writeTime(napDuration_h, napDuration_m, 11, 1);
+        writeTime(napDuration.h, napDuration.m, 11, 1);
         break;
     }
 }
@@ -785,18 +810,45 @@ void doAlarm()
     if (wakingTime >= 0)
         tone(BUZZER, 300, 5);
 }
+//--------------------------------------------------
+int checkAlarmRepeat(int repeat)
+{
+    return checkAlarmRepeatAtDay(repeat, t.day);
+}
+int checkAlarmRepeatAtDay(int repeat, int day)
+{
+    switch (repeat)
+    {
+    case 0:
+    case 1:
+        return 1;
+    case 2:
+        return (day <= 4) ? 1 : 0;
+    case 3:
+        return (day > 4) ? 1 : 0;
+    case 4:
+    case 5:
+    case 6:
+    case 7:
+        return 0;
+    default:
+        return 1;
+    }
+}
 //-----------------------------Alarm - Aktivierung-------------------------------------
 void checkAlarm()
 {
-    if (napDuration_h * 60 + napDuration_m == napTime)
+    if (napDuration.h * 60 + napDuration.m >= napTime)
     {
         wakingTime = 0;
     }
-    else if (((min == al1.m && hour == al1.h) || (min == al2.m && hour == al2.h)) && tims % 60 == 0)
+    else if (((t.tim.m == al1.tim.m && t.tim.h == al1.tim.h && checkAlarmRepeat(al1.day)) ||
+              (t.tim.m == al2.tim.m && t.tim.h == al2.tim.h && checkAlarmRepeat(al1.day))) &&
+             tims % 60 == 0)
     {
         wakingTime = 0;
     }
-    else if (snoozeTime == snooze_m * 60)
+    else if (snoozeTime >= snooze * 60)
     {
         wakingTime = 0;
     }
