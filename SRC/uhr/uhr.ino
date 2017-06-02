@@ -25,7 +25,7 @@ struct DateTime
     Time tim;
     int date = 23;
     int month = 4;
-    int day = 7;
+    int day = 6;
     int year = 2200;
 };
 
@@ -268,7 +268,6 @@ unsigned int dcfDecode()
 //----------------------------------------------------setup----------------------------
 void setup() // The setup routine runs once, when you press Reset:
 {
-    //Serial.begin(9600);
 
     lcd.begin(16, 2);
     lcd.clear();
@@ -313,11 +312,11 @@ void setup() // The setup routine runs once, when you press Reset:
 
     al1.tim.m = 30;
     al1.tim.h = 6;
-    al1.day = 3;
+    al1.day = 2;
 
     al2.tim.m = 30;
     al2.tim.h = 6;
-    al2.day = 3;
+    al2.day = 5;
 
     to.m = 30;
     to.h = 12;
@@ -402,7 +401,6 @@ void fulPlott(int i, int time, int x, int y)
         time /= 10;
     }
 }
-
 //------------------------------------writeTimeIn xx:yy format to LCD-----------------
 void writeTime(int time1, int time2, int x, int y)
 {
@@ -414,7 +412,6 @@ void writeTime(int time1, int time2, int x, int y)
 //------------------------------------------timeTilAlarm------------------------------
 int timeTilAlarm()
 {
-
     int til[4] = {32767, 32767, 32767, 32767};
 
     if (napTime >= 0)
@@ -427,32 +424,48 @@ int timeTilAlarm()
         til[1] = snooze - snoozeTime;
     }
 
-    int al1_days = 0; //TODO: Unit test
-    for (int d = 0; !checkAlarmRepeatAtDay(al1.day, (t.day + d) % 7) && d < 7; d++)
+    int isTimePastAlarm = al1.tim.h * 60 + al1.tim.m < t.tim.h * 60 + t.tim.m; //könnte der alarm schon klingeln
+    int startingDay = isTimePastAlarm ? 1 : 0;                                 //wenn der alarm schon an war nicht mehr heute überprüfen. (0=heute, 1=morgen)
+
+    int al1_days = 0; //Wieviele targe zum Alarm
+    for (int d = startingDay; !checkAlarmRepeatAtDay(al1.day, (t.day + d) % 7) && d < 8; d++)
         al1_days++;
-    if (al1.tim.h * 60 + al1.tim.m < t.tim.h * 60 + t.tim.m)
-        al1_days++;
+
     if (al1_days < 7)
         til[2] = (24 * 60 * al1_days) + ((al1.tim.h * 60 + al1.tim.m) - (t.tim.h * 60 + t.tim.m));
 
     int al2_days = 0; //TODO: Unit test
-    for (int d = 0; !checkAlarmRepeatAtDay(al2.day, (t.day + d) % 7) && d < 7; d++)
-        al2_days++;
+
     if (al2.tim.h * 60 + al2.tim.m < t.tim.h * 60 + t.tim.m)
+    {
         al2_days++;
+        for (int d = 1; !checkAlarmRepeatAtDay(al2.day, (t.day + d) % 7) && d < 7; d++)
+            al2_days++;
+    }
+    else
+    {
+        for (int d = 0; !checkAlarmRepeatAtDay(al2.day, (t.day + d) % 7) && d < 7; d++)
+            al2_days++;
+    }
+
     if (al2_days < 7)
         til[3] = (24 * 60 * al2_days) + ((al2.tim.h * 60 + al2.tim.m) - (t.tim.h * 60 + t.tim.m));
 
-    int maxVal = 0;
+    int minVal = 32767;
     for (int i = 0; i < 4; i++)
-        if (til[i] > maxVal)
-            maxVal = til[i];
+        if (til[i] < minVal)
+            minVal = til[i];
 
-    if (maxVal == 32767)
+    Serial.println(til[0]);
+    Serial.println(til[1]);
+    Serial.println(til[2]);
+    Serial.println(til[3]);
+
+    if (minVal == 32767)
         return 0;
-    if (maxVal >= 24 * 60)
-        return -(maxVal / (24 * 60) * 100 + (maxVal / 60) % 24);
-    return maxVal / 60 * 100 + maxVal % 60;
+    if (minVal >= 24 * 60)
+        return -(minVal / (24 * 60) * 100 + (minVal / 60) % 24);
+    return minVal / 60 * 100 + minVal % 60;
 }
 //----------------------------------------------------------------setupAuswahl---------
 void setupAuswahl()
@@ -620,7 +633,6 @@ void zweiteDisplayZeile(int updateAllDisplay)
 {
     if (al1.day != curAl1.day || updateAllDisplay)
     {
-
         lcd.setCursor(0, 1); //widerhohlungsmodus
 
         lcd.print(wochentageReRun[al1.day]);
@@ -683,9 +695,13 @@ void ersteDisplayZeile(int updateAllDisplay)
         else // Alarm ist mehrere tage hin (ctTA format: -tthh) auf display: 'T't:hh. zB T3:04 (3 tage und 4 stunden)
         {
             ctTA = -ctTA;
-            writeTime(ctTA / 100, ctTA % 100, 6, 0);
             lcd.setCursor(6, 0);
             lcd.print("T");
+            lcd.setCursor(7, 0);
+            lcd.print(ctTA / 100);
+            lcd.setCursor(8, 0);
+            lcd.print(":");
+            fulPlott(2, ctTA % 100, 9, 0);
         }
         curtTA = ctTA;
     }
@@ -838,19 +854,22 @@ int checkAlarmRepeatAtDay(int repeat, int day)
 //-----------------------------Alarm - Aktivierung-------------------------------------
 void checkAlarm()
 {
-    if (napDuration.h * 60 + napDuration.m >= napTime)
+    if (napDuration.h * 3600 + napDuration.m * 60 <= napTime)
     {
         wakingTime = 0;
+        Serial.println("1");
     }
     else if (((t.tim.m == al1.tim.m && t.tim.h == al1.tim.h && checkAlarmRepeat(al1.day)) ||
               (t.tim.m == al2.tim.m && t.tim.h == al2.tim.h && checkAlarmRepeat(al1.day))) &&
              tims % 60 == 0)
     {
         wakingTime = 0;
+        Serial.println("2");
     }
-    else if (snoozeTime >= snooze * 60)
+    else if (snoozeTime >= snooze * 3600)
     {
         wakingTime = 0;
+        Serial.println("3");
     }
 }
 //-------------------------alarmDeactivate-----------------------------------------
@@ -899,6 +918,12 @@ void loop()
         alarmDeactivate();
     }
 
+    Serial.println("wakingt");
+    Serial.println(wakingTime);
+    Serial.println("snoozeTime");
+    Serial.println(snoozeTime);
+    Serial.println("setupAuswahlActiv");
+    Serial.println(setupAuswahlActiv);
     /*if (setupAuswahlActiv) {
         setupAuswahl();
     }else {
