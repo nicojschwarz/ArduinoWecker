@@ -23,10 +23,10 @@ struct Time
 struct DateTime
 {
     Time tim;
-    long date = 23;
-    long month = 4;
-    long day = 6;
-    long year = 2200;
+    long date = 2;
+    long month = 6;
+    long day = 4;
+    long year = 2017;
 };
 
 struct Alarm
@@ -318,8 +318,8 @@ void setup() // The setup routine runs once, when you press Reset:
     al2.tim.h = 6;
     al2.day = 5;
 
-    to.m = 30;
-    to.h = 12;
+    to.m = 36;
+    to.h = 23;
 
     napDuration.m = 45;
     napDuration.h = 0;
@@ -425,7 +425,6 @@ long timeTilAlarm()
     }
 
     long al1_days = 0; //TODO: Unit test
-
     if (al1.tim.h * 60 + al1.tim.m < t.tim.h * 60 + t.tim.m)
     {
         al1_days++;
@@ -437,12 +436,10 @@ long timeTilAlarm()
         for (long d = 0; !checkAlarmRepeatAtDay(al1.day, (t.day + d) % 7) && d < 7; d++)
             al1_days++;
     }
-
     if (al1_days < 7)
         til[2] = (24 * 60 * al1_days) + ((al1.tim.h * 60 + al1.tim.m) - (t.tim.h * 60 + t.tim.m));
 
     long al2_days = 0; //TODO: Unit test
-
     if (al2.tim.h * 60 + al2.tim.m < t.tim.h * 60 + t.tim.m)
     {
         al2_days++;
@@ -454,7 +451,6 @@ long timeTilAlarm()
         for (long d = 0; !checkAlarmRepeatAtDay(al2.day, (t.day + d) % 7) && d < 7; d++)
             al2_days++;
     }
-
     if (al2_days < 7)
         til[3] = (24 * 60 * al2_days) + ((al2.tim.h * 60 + al2.tim.m) - (t.tim.h * 60 + t.tim.m));
 
