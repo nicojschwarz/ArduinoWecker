@@ -416,20 +416,27 @@ int timeTilAlarm()
 
     if (napTime >= 0)
     {
-        til[0] = napDuration.h * 60 + napDuration.m - napTime;
+        til[0] = napDuration.h * 60 + napDuration.m - napTime / 60;
     }
 
     if (snoozeTime >= 0)
     {
-        til[1] = snooze - snoozeTime;
+        til[1] = snooze - snoozeTime / 60;
     }
 
-    int isTimePastAlarm = al1.tim.h * 60 + al1.tim.m < t.tim.h * 60 + t.tim.m; //könnte der alarm schon klingeln
-    int startingDay = isTimePastAlarm ? 1 : 0;                                 //wenn der alarm schon an war nicht mehr heute überprüfen. (0=heute, 1=morgen)
+    int al1_days = 0; //TODO: Unit test
 
-    int al1_days = 0; //Wieviele targe zum Alarm
-    for (int d = startingDay; !checkAlarmRepeatAtDay(al1.day, (t.day + d) % 7) && d < 8; d++)
+    if (al1.tim.h * 60 + al1.tim.m < t.tim.h * 60 + t.tim.m)
+    {
         al1_days++;
+        for (int d = 1; !checkAlarmRepeatAtDay(al1.day, (t.day + d) % 7) && d < 7; d++)
+            al1_days++;
+    }
+    else
+    {
+        for (int d = 0; !checkAlarmRepeatAtDay(al1.day, (t.day + d) % 7) && d < 7; d++)
+            al1_days++;
+    }
 
     if (al1_days < 7)
         til[2] = (24 * 60 * al1_days) + ((al1.tim.h * 60 + al1.tim.m) - (t.tim.h * 60 + t.tim.m));
@@ -456,11 +463,6 @@ int timeTilAlarm()
         if (til[i] < minVal)
             minVal = til[i];
 
-    Serial.println(til[0]);
-    Serial.println(til[1]);
-    Serial.println(til[2]);
-    Serial.println(til[3]);
-
     if (minVal == 32767)
         return 0;
     if (minVal >= 24 * 60)
@@ -482,6 +484,9 @@ void setupAuswahl()
         case 2:
             setupAuswahlActiv = 5;
             break;
+        case 3:
+            setupAuswahlActiv = 10; // snooze
+            break;
         case 4:
             setupAuswahlActiv = 8;
             break;
@@ -498,12 +503,16 @@ void setupAuswahl()
             setupAuswahlActiv = 3;
             break;
         case 5:
-            al1.tim.h++;
-            if (al1.tim.h >= 60)
+            if (al1.tim.h >= 23)
                 al1.tim.h = 0;
+            else
+                al1.tim.h++;
             break;
         case 6:
-            al1.tim.h--;
+            if (al1.tim.h <= 0)
+                al1.tim.h = 23;
+            else
+                al1.tim.h--;
             break;
         }
         break;
@@ -515,30 +524,38 @@ void setupAuswahl()
             setupZweiteZeile(1);
             break;
         case 5:
-            al1.tim.m++;
+            if (al1.tim.m >= 59)
+                al1.tim.m = 0;
+            else
+                al1.tim.m++;
             break;
         case 6:
-            al1.tim.m--;
+            if (al1.tim.m <= 0)
+                al1.tim.m = 59;
+            else
+                al1.tim.m--;
             break;
         }
         break;
     case 4:
+        if (al1.day >= 4)
+            al1.day -= 4;
         switch (getkey())
         {
         case 1:
             setupAuswahlActiv = 0;
             break;
         case 5:
-            if (al1.day < 4)
-            {
+            if (al1.day >= 3)
+                al1.day = 0;
+            else
                 al1.day++;
-            }
             break;
         case 6:
-            if (al1.day > 1)
-            {
+            if (al1.day <= 0)
+                al1.day = 3;
+            else
                 al1.day--;
-            }
             break;
         }
         break;
@@ -549,10 +566,16 @@ void setupAuswahl()
             setupAuswahlActiv = 6;
             break;
         case 5:
-            al2.tim.h++;
+            if (al2.tim.h >= 23)
+                al2.tim.h = 0;
+            else
+                al2.tim.h++;
             break;
         case 6:
-            al2.tim.h--;
+            if (al2.tim.h <= 0)
+                al2.tim.h = 23;
+            else
+                al2.tim.h--;
             break;
         }
         break;
@@ -564,14 +587,22 @@ void setupAuswahl()
             setupZweiteZeile(1);
             break;
         case 5:
-            al2.tim.m++;
+            if (al2.tim.m >= 59)
+                al2.tim.m = 0;
+            else
+                al2.tim.m++;
             break;
         case 6:
-            al2.tim.m--;
+            if (al2.tim.m <= 0)
+                al2.tim.m = 59;
+            else
+                al2.tim.m--;
             break;
         }
         break;
     case 7:
+        if (al2.day >= 4)
+            al2.day -= 4;
         switch (getkey())
         {
         case 2:
@@ -598,10 +629,16 @@ void setupAuswahl()
             setupAuswahlActiv = 9;
             break;
         case 5:
-            napDuration.h++;
+            if (napDuration.h >= 23)
+                napDuration.h = 0;
+            else
+                napDuration.h++;
             break;
         case 6:
-            napDuration.h--;
+            if (napDuration.h <= 0)
+                napDuration.h = 23;
+            else
+                napDuration.h--;
             break;
         }
         break;
@@ -612,10 +649,37 @@ void setupAuswahl()
             setupAuswahlActiv = 0;
             break;
         case 5:
-            napDuration.m++;
+            if (napDuration.m >= 59)
+                napDuration.m = 0;
+            else
+                napDuration.m++;
             break;
         case 6:
-            napDuration.m--;
+            if (napDuration.m <= 0)
+                napDuration.m = 59;
+            else
+                napDuration.m--;
+            break;
+        }
+        break;
+
+    case 10:
+        switch (getkey())
+        {
+        case 3:
+            setupAuswahlActiv = 0;
+            break;
+        case 5:
+            if (snooze >= 59)
+                snooze = 0;
+            else
+                snooze++;
+            break;
+        case 6:
+            if (snooze <= 0)
+                snooze = 59;
+            else
+                snooze--;
             break;
         }
         break;
@@ -733,7 +797,10 @@ void handleInput()
     case 3:
         break;
     case 4:
-        napTime = 0;
+        if (napTime >= 0)
+            napTime = -1;
+        else
+            napTime = 0;
         break;
     case 5:
         setupZweiteZeile(0);
@@ -818,6 +885,11 @@ void setupZweiteZeile(int updateAllDisplay)
         lcd.print("Mittag M");
         writeTime(napDuration.h, napDuration.m, 11, 1);
         break;
+    case 10:
+        lcd.setCursor(0, 1);
+        lcd.print("Snooze M");
+        fulPlott(2, snooze, 14, 1);
+        break;
     }
 }
 //-------------------------------Alarm - ausfuehrung--------------------------------
@@ -857,19 +929,17 @@ void checkAlarm()
     if (napDuration.h * 3600 + napDuration.m * 60 <= napTime)
     {
         wakingTime = 0;
-        Serial.println("1");
+        napTime = -1;
     }
-    else if (((t.tim.m == al1.tim.m && t.tim.h == al1.tim.h && checkAlarmRepeat(al1.day)) ||
-              (t.tim.m == al2.tim.m && t.tim.h == al2.tim.h && checkAlarmRepeat(al1.day))) &&
+    else if (((t.tim.m == al2.tim.m && t.tim.h == al2.tim.h && checkAlarmRepeat(al2.day)) ||
+              (t.tim.m == al1.tim.m && t.tim.h == al1.tim.h && checkAlarmRepeat(al1.day))) &&
              tims % 60 == 0)
     {
         wakingTime = 0;
-        Serial.println("2");
     }
     else if (snoozeTime >= snooze * 3600)
     {
         wakingTime = 0;
-        Serial.println("3");
     }
 }
 //-------------------------alarmDeactivate-----------------------------------------
@@ -883,8 +953,7 @@ void alarmDeactivate()
     case 5:
     case 6:
         wakingTime = -1;
-        if (snoozeTime != -1)
-            snoozeTime = 0;
+        snoozeTime = 0;
         break;
     case 3:
         wakingTime = -1;
@@ -918,12 +987,6 @@ void loop()
         alarmDeactivate();
     }
 
-    Serial.println("wakingt");
-    Serial.println(wakingTime);
-    Serial.println("snoozeTime");
-    Serial.println(snoozeTime);
-    Serial.println("setupAuswahlActiv");
-    Serial.println(setupAuswahlActiv);
     /*if (setupAuswahlActiv) {
         setupAuswahl();
     }else {
@@ -942,7 +1005,7 @@ void loop()
 
     //dcfDecode();
 
-    //Alarm - Aktivierung
+    //Alarm - Aktivierungal2
     checkAlarm();
 
     //Alarm - ausfuehrung
