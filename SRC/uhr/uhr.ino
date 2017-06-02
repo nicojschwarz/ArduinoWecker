@@ -16,23 +16,23 @@ LiquidCrystal lcd(12, 11, 6, 5, 4, 3); // initialize the library with the number
 
 struct Time
 {
-    int m; //Minutes
-    int h; //Stunde
+    long m; //Minutes
+    long h; //Stunde
 };
 
 struct DateTime
 {
     Time tim;
-    int date = 23;
-    int month = 4;
-    int day = 6;
-    int year = 2200;
+    long date = 23;
+    long month = 4;
+    long day = 6;
+    long year = 2200;
 };
 
 struct Alarm
 {
     Time tim;
-    int day; //redo alarm 1 : E) 1mal[1] I) immer[2] A) von montag bis freitag[3] W) samstag und sonntag[4]
+    long day; //redo alarm 1 : E) 1mal[1] I) immer[2] A) von montag bis freitag[3] W) samstag und sonntag[4]
 };
 
 struct DateTime t; // current time
@@ -42,25 +42,25 @@ struct Alarm al1;
 struct Alarm al2;
 
 struct Time napDuration;
-int snooze = 5; // Snooze Minutes
+long snooze = 5; // Snooze Minutes
 
-int wakingTime = -1; //Vergangene Sekunden seit Waeckstart
-int napTime = -1;    //Vergangene Sekunden seit Mittagsschlafstart
-int snoozeTime = -1; //Vergangene Sekunden seit snoozeStart
+long wakingTime = -1; //Vergangene Sekunden seit Waeckstart
+long napTime = -1;    //Vergangene Sekunden seit Mittagsschlafstart
+long snoozeTime = -1; //Vergangene Sekunden seit snoozeStart
 
-int curTime = 0; //Momentan angezeigte Nummer
-int curtTA = 0;  //Momentan angezeigte zeit bis alarm
-int curddmm = 0; //Momentan angezeigter tag und monat
-int curday = 0;  //Momentan angezeigter tag
+long curTime = 0; //Momentan angezeigte Nummer
+long curtTA = 0;  //Momentan angezeigte zeit bis alarm
+long curddmm = 0; //Momentan angezeigter tag und monat
+long curday = 0;  //Momentan angezeigter tag
 
 struct Alarm curAl1;
 struct Alarm curAl2;
 
-int setupAuswahlActiv = 0; //Ob in Hauptmenue
+long setupAuswahlActiv = 0; //Ob in Hauptmenue
 
-int onlyOneRow = 0; //Nur die erste Zeile der Displays wird gezeigt
+long onlyOneRow = 0; //Nur die erste Zeile der Displays wird gezeigt
 
-int dayExchange = 0; //
+long dayExchange = 0; //
 
 char wochentagExchange[2];
 
@@ -71,22 +71,22 @@ const short monthLengths[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
 struct
 {                    //
-    unsigned int yy; //received date
-    unsigned int mo;
-    unsigned int dd;
-    unsigned int vld; //date is valid
-    unsigned int hh;  //received time
-    unsigned int mm;
-    unsigned int pmh; //previus hh*60+mm
-    unsigned int vlt; //valid time
+    unsigned long yy; //received date
+    unsigned long mo;
+    unsigned long dd;
+    unsigned long vld; //date is valid
+    unsigned long hh;  //received time
+    unsigned long mm;
+    unsigned long pmh; //previus hh*60+mm
+    unsigned long vlt; //valid time
     //recieve data
     unsigned char fin; //buffer finalized for decode
     unsigned char cnf; //finalized count for debug
-    unsigned int cnt;  //bit count
-    unsigned int le;   //leading edge time
-    unsigned int tim;  //time since prevoius leading edge
+    unsigned long cnt;  //bit count
+    unsigned long le;   //leading edge time
+    unsigned long tim;  //time since prevoius leading edge
     char actv;         //dcf activ
-    signed int bit[60];
+    signed long bit[60];
 } dcf;
 
 #define KY_TIM 10   //key [ms]
@@ -97,11 +97,11 @@ struct
 {                     //Mpast
     char mod;         //Mode
     char buf;         //last key
-    unsigned int tim; //timeout [ms]
+    unsigned long tim; //timeout [ms]
 } kb;
 
-int timms = 0; //Millisecunden Vorteiler
-int tims = 0;  //Sekunden Timer
+long timms = 0; //Millisecunden Vorteiler
+long tims = 0;  //Sekunden Timer
 
 //----------------------------------------------gp-timer--------------------------------
 void gptim() //gp-timer 1ms ir-service
@@ -145,7 +145,7 @@ void gptim() //gp-timer 1ms ir-service
 
 void dcf_rx(void) //DCF77 interupt handler
 {
-    int tim;
+    long tim;
     byte val = digitalRead(DCF);
     dcf.actv = 1;
     // dcf.tim inc 1ms done by gptime
@@ -189,11 +189,11 @@ void dcf_rx(void) //DCF77 interupt handler
     return;
 }
 //----------------------------------------------------------------------dcf_getv-------
-unsigned int dcf_getv(int i0, int i9, int th) //get dcf-decoded value
+unsigned long dcf_getv(long i0, long i9, long th) //get dcf-decoded value
 {
     Serial.println("dcf_getv");
     //th bit schwellwert >th bit=1
-    unsigned int v, c, i;
+    unsigned long v, c, i;
 
     v = 0;
     c = 1; //c=1,2,4,8,10,20,40,80;
@@ -208,11 +208,11 @@ unsigned int dcf_getv(int i0, int i9, int th) //get dcf-decoded value
     return (v);
 }
 //------------------------------------------------------------------------dcf_getc------
-unsigned int dcf_getc(int i0, int i9, int th) //get dcf-parity-valid
+unsigned long dcf_getc(long i0, long i9, long th) //get dcf-parity-valid
 {
     Serial.println("dcf_getc");
     //th bit schwellwert >th bit=1
-    unsigned int i, v;
+    unsigned long i, v;
     boolean p, c;
 
     p = 0;
@@ -231,10 +231,10 @@ unsigned int dcf_getc(int i0, int i9, int th) //get dcf-parity-valid
     return (0);
 }
 //-----------------------dcfDecode----------------------------------------------------
-unsigned int dcfDecode()
+unsigned long dcfDecode()
 {
     Serial.println("dcfDecode");
-    unsigned int th, mh;
+    unsigned long th, mh;
 
     //splittime: low max 120ms, high min 180ms
     //th=112;			//ELV-9461059
@@ -379,19 +379,19 @@ unsigned char getkey(void) //get a key
     return (0);
 }
 //------------------------------------------generate time----------------------------
-int genTime()
+long genTime()
 {
     return (t.tim.m + t.tim.h * 100);
 }
 //----------------------------------------------calculate current time---------------
 void calcCT()
 {
-    int tmpMin = tims / 60 + to.m;
+    long tmpMin = tims / 60 + to.m;
     t.tim.m = tmpMin % 60;
     t.tim.h = (tmpMin / 60 + to.h) % 24;
 }
 //---------------------------------nummer mit 0 am anfang auf lcd---------------------
-void fulPlott(int i, int time, int x, int y)
+void fulPlott(long i, long time, long x, long y)
 {
     while (i)
     {
@@ -402,7 +402,7 @@ void fulPlott(int i, int time, int x, int y)
     }
 }
 //------------------------------------writeTimeIn xx:yy format to LCD-----------------
-void writeTime(int time1, int time2, int x, int y)
+void writeTime(long time1, long time2, long x, long y)
 {
     fulPlott(2, time1, x, y);
     lcd.setCursor(x + 2, y);
@@ -410,9 +410,9 @@ void writeTime(int time1, int time2, int x, int y)
     fulPlott(2, time2, x + 3, y);
 }
 //------------------------------------------timeTilAlarm------------------------------
-int timeTilAlarm()
+long timeTilAlarm()
 {
-    int til[4] = {32767, 32767, 32767, 32767};
+    long til[4] = {32767, 32767, 32767, 32767};
 
     if (napTime >= 0)
     {
@@ -424,42 +424,42 @@ int timeTilAlarm()
         til[1] = snooze - snoozeTime / 60;
     }
 
-    int al1_days = 0; //TODO: Unit test
+    long al1_days = 0; //TODO: Unit test
 
     if (al1.tim.h * 60 + al1.tim.m < t.tim.h * 60 + t.tim.m)
     {
         al1_days++;
-        for (int d = 1; !checkAlarmRepeatAtDay(al1.day, (t.day + d) % 7) && d < 7; d++)
+        for (long d = 1; !checkAlarmRepeatAtDay(al1.day, (t.day + d) % 7) && d < 7; d++)
             al1_days++;
     }
     else
     {
-        for (int d = 0; !checkAlarmRepeatAtDay(al1.day, (t.day + d) % 7) && d < 7; d++)
+        for (long d = 0; !checkAlarmRepeatAtDay(al1.day, (t.day + d) % 7) && d < 7; d++)
             al1_days++;
     }
 
     if (al1_days < 7)
         til[2] = (24 * 60 * al1_days) + ((al1.tim.h * 60 + al1.tim.m) - (t.tim.h * 60 + t.tim.m));
 
-    int al2_days = 0; //TODO: Unit test
+    long al2_days = 0; //TODO: Unit test
 
     if (al2.tim.h * 60 + al2.tim.m < t.tim.h * 60 + t.tim.m)
     {
         al2_days++;
-        for (int d = 1; !checkAlarmRepeatAtDay(al2.day, (t.day + d) % 7) && d < 7; d++)
+        for (long d = 1; !checkAlarmRepeatAtDay(al2.day, (t.day + d) % 7) && d < 7; d++)
             al2_days++;
     }
     else
     {
-        for (int d = 0; !checkAlarmRepeatAtDay(al2.day, (t.day + d) % 7) && d < 7; d++)
+        for (long d = 0; !checkAlarmRepeatAtDay(al2.day, (t.day + d) % 7) && d < 7; d++)
             al2_days++;
     }
 
     if (al2_days < 7)
         til[3] = (24 * 60 * al2_days) + ((al2.tim.h * 60 + al2.tim.m) - (t.tim.h * 60 + t.tim.m));
 
-    int minVal = 32767;
-    for (int i = 0; i < 4; i++)
+    long minVal = 32767;
+    for (long i = 0; i < 4; i++)
         if (til[i] < minVal)
             minVal = til[i];
 
@@ -693,7 +693,7 @@ void setupAuswahl()
     }
 }
 //-------------------------------------------2Displayzeile----------------------------
-void zweiteDisplayZeile(int updateAllDisplay)
+void zweiteDisplayZeile(long updateAllDisplay)
 {
     if (al1.day != curAl1.day || updateAllDisplay)
     {
@@ -736,17 +736,17 @@ void zweiteDisplayZeile(int updateAllDisplay)
 }
 //-------------------1Displayzeile---------------------------------------------------
 
-void ersteDisplayZeile(int updateAllDisplay)
+void ersteDisplayZeile(long updateAllDisplay)
 {
 
-    int cTime = genTime();
+    long cTime = genTime();
     if (cTime != curTime || updateAllDisplay)
     {
         writeTime(t.tim.h, t.tim.m, 0, 0);
         curTime = cTime;
     }
     //zeit bis alarm
-    int ctTA = timeTilAlarm();
+    long ctTA = timeTilAlarm();
     if (ctTA != curtTA || updateAllDisplay)
     {
         if (ctTA > 0) // Alarm klingelt in ctTA (Format: hhmm)
@@ -769,7 +769,7 @@ void ersteDisplayZeile(int updateAllDisplay)
         }
         curtTA = ctTA;
     }
-    int cddmm = t.date + t.month * 100;
+    long cddmm = t.date + t.month * 100;
     if (cddmm != curddmm || updateAllDisplay)
     {
         fulPlott(2, t.date, 12, 0);
@@ -813,7 +813,7 @@ void handleInput()
     }
 }
 //-------------------------------------------------setupZweiteZeile----------------
-void setupZweiteZeile(int updateAllDisplay)
+void setupZweiteZeile(long updateAllDisplay)
 {
     if (!onlyOneRow)
     {
@@ -899,11 +899,11 @@ void doAlarm()
         tone(BUZZER, 300, 5);
 }
 //--------------------------------------------------
-int checkAlarmRepeat(int repeat)
+long checkAlarmRepeat(long repeat)
 {
     return checkAlarmRepeatAtDay(repeat, t.day);
 }
-int checkAlarmRepeatAtDay(int repeat, int day)
+long checkAlarmRepeatAtDay(long repeat, long day)
 {
     switch (repeat)
     {
@@ -937,7 +937,7 @@ void checkAlarm()
     {
         wakingTime = 0;
     }
-    else if (snoozeTime >= snooze * 3600)
+    else if (snoozeTime >= snooze * 60)
     {
         wakingTime = 0;
     }
