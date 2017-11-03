@@ -7,12 +7,16 @@
 #define B_ALARM2 19 //... den Alarm (Buzzer / Relais) an- / auszustellen
 #define B_SNOZ 20   //... Taster der die funktion hat ... den Alarm auszuschalten
 #define B_NAP 21    // mittagsschlaf
-#define B_A 22      //a (-)
-#define B_B 23      //b (+)
+#define E_A 22      //drehencoder input a
+#define E_B 23      //drehencoder input b
+#define E_C 7       //drehencoder Taster
 
 #define BUZZER 10 //Buzzer
 
 LiquidCrystal lcd(12, 11, 6, 5, 4, 3); // initialize the library with the numbers of the interface pins
+
+int E_ALast = LOW;  //letzte position des E_A
+int en = LOW;        //
 
 struct Time
 {
@@ -53,7 +57,7 @@ long curtTA = 0;  //Momentan angezeigte zeit bis alarm
 long curddmm = 0; //Momentan angezeigter tag und monat
 long curday = 0;  //Momentan angezeigter tag
 
-struct Alarm curAl1;
+struct Alar m curAl1;
 struct Alarm curAl2;
 
 long setupAuswahlActiv = 0; //Ob in Hauptmenue
@@ -279,8 +283,10 @@ void setup() // The setup routine runs once, when you press Reset:
     pinMode(B_ALARM2, INPUT);
     pinMode(B_SNOZ, INPUT);
     pinMode(B_NAP, INPUT);
-    pinMode(B_A, INPUT);
-    pinMode(B_A, INPUT);
+
+    pinMode(E_A, INPUT);
+    pinMode(E_B, INPUT);
+    pinMode(E_C, INPUT);
 
     //pinMode(B_DCF, INPUT_PULLUP);
 
@@ -332,6 +338,12 @@ void setup() // The setup routine runs once, when you press Reset:
 //-----------------------------------------------keys---------------------------------
 unsigned char getkey(void) //get a key
 {
+    int lol = encoder();    
+    if(lol) {
+        Serial.print (lol);
+        return (lol);
+    }
+
     unsigned char ky = 0;
 
     if (digitalRead(B_ALARM1))
@@ -342,10 +354,8 @@ unsigned char getkey(void) //get a key
         ky = 3; //snooze
     else if (digitalRead(B_NAP))
         ky = 4; //nap (Mittagsschlaf)
-    else if (digitalRead(B_A))
-        ky = 5; //a (+)
-    else if (digitalRead(B_B))
-        ky = 6; //b (-)
+    else if (digitalRead(E_C))
+        ky = 7; //drehencoder Taster
 
     //reset key
     if (!ky)
@@ -798,11 +808,7 @@ void handleInput()
         else
             napTime = 0;
         break;
-    case 5:
-        setupZweiteZeile(0);
-        setupAuswahlActiv = 1;
-        break;
-    case 6:
+    case 7:
         setupZweiteZeile(0);
         setupAuswahlActiv = 1;
         break;
@@ -888,19 +894,13 @@ void setupZweiteZeile(long updateAllDisplay)
         break;
     }
 }
-//-------------------------------Alarm - ausfuehrung--------------------------------
-void doAlarm()
-{
-    if (wakingTime >= 0)
-        tone(BUZZER, 300, 5);
-}
-//--------------------------------------------------
+//--------------------------------------------checkAlarmRepeat----------------------
 long checkAlarmRepeat(long repeat)
 {
     return checkAlarmRepeatAtDay(repeat, t.day);
 }
-long checkAlarmRepeatAtDay(long repeat, long day)
-{
+//---------------------------------------checkAlarmRepeatAtDay----------------------
+long checkAlarmRepeatAtDay(long repeat, long day) {
     switch (repeat)
     {
     case 0:
@@ -920,8 +920,7 @@ long checkAlarmRepeatAtDay(long repeat, long day)
     }
 }
 //-----------------------------Alarm - Aktivierung-------------------------------------
-void checkAlarm()
-{
+void checkAlarm() {
     if (napDuration.h * 3600 + napDuration.m * 60 <= napTime)
     {
         wakingTime = 0;
@@ -938,34 +937,80 @@ void checkAlarm()
         wakingTime = 0;
     }
 }
-//-------------------------alarmDeactivate-----------------------------------------
-void alarmDeactivate()
-{
-    switch (getkey())
-    {
-    case 1:
-    case 2:
-    case 4:
-    case 5:
-    case 6:
-        wakingTime = -1;
-        snoozeTime = 0;
-        break;
-    case 3:
-        wakingTime = -1;
-        snoozeTime = -1;
-        break;
+//-------------------------encoder-------------------------------------------------
+int encoder() {
+    
+    en = digitalRead(E_A);
+  
+    if ((E_ALast == LOW) && (en == HIGH)) {
+      if (digitalRead(E_B) == LOW) {
+        E_ALast = en;
+        return (5); 
+      }
+        
+      else{
+        E_ALast = en;
+        return (6);
+      }
+      
     }
+  
+    E_ALast = en;
+    return (0);
 }
-//- -----------------------------------------loop----------------------------------
+//------------------------------------------waking------------------------------
+void waking() {
+    int btn = 0;
+      while(!btn) {
+  
+          unsigned int dur = random(60000);
+          int pit = random(100, 1000);
+      
+          int choice = random(0, 2);
+      
+          for (int t = dur/pit*3; t >= 1; t--)
+              switch (choice){
+                  case 0: playSound(pit); break;
+                  case 1: playSound(t); break;
+                  case 2: playSound(1/t); break;
+              }    
+          playSound(pit);
+          lcd.print("Waking");
+
+          //button input zur beendung des Alarms
+          switch (getkey())
+          {
+          case 6:
+              wakingTime = -1;
+              snoozeTime = 0;
+              btn = 1;
+              lcd.clear();
+              zweiteDisplayZeile(1);
+              ersteDisplayZeile(1);
+              break;
+          case 7:
+              wakingTime = -1;
+              snoozeTime = -1;
+              btn = 1;
+              lcd.clear();
+              zweiteDisplayZeile(1);
+              ersteDisplayZeile(1);
+              break;
+          }
+      }
+  }
+//------------------------------------------playSound----------------------------
+void playSound(int t)
+  {
+      digitalWrite(BUZZER, HIGH);
+      delayMicroseconds(t);
+      digitalWrite(BUZZER, LOW);
+      delayMicroseconds(t);
+}
+//------------------------------------------loop-----------------------------------
 void loop()
 {
     calcCT();
-    //Alarm - Aktivierung
-    //checkAlarm();
-
-    //Alarm - ausfuehrung
-    //doAlarm();
 
     if (wakingTime < 0 && snoozeTime < 0)
     {
@@ -980,14 +1025,8 @@ void loop()
     }
     else
     {
-        alarmDeactivate();
+        waking();
     }
-
-    /*if (setupAuswahlActiv) {
-        setupAuswahl();
-    }else {
-        handleInput();
-    }*/
 
     if (!onlyOneRow)
     {
@@ -1001,11 +1040,5 @@ void loop()
 
     //dcfDecode();
 
-    //Alarm - Aktivierungal2
-    checkAlarm();
-
-    //Alarm - ausfuehrung
-    doAlarm();
-
-    //tone(BUZZER, 300, 500);
+    //Serial.print ("/");
 }
