@@ -668,7 +668,7 @@ void setupAuswahl()
             break;
         }
         break;
-
+      
     case 10:
         switch (getkey())
         {
