@@ -1,3 +1,4 @@
 *.ino-old
 *.ods
-/Backup/*
+Backup
+.vscode

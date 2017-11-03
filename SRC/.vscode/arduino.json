@@ -1,4 +1,0 @@
-{
-    "board": "arduino:avr:micro",
-    "port": "COM3"
-}
